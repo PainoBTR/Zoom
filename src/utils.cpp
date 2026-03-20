@@ -1,4 +1,8 @@
 #include "utils.hpp"
+#include "constants.hpp"
+
+#include <algorithm>
+
 using namespace geode::prelude;
 
 void zoomPlayLayer(CCNode* playLayer, float delta, CCPoint screenAnchor) {
@@ -19,8 +23,8 @@ void zoomPlayLayer(CCNode* playLayer, float delta, CCPoint screenAnchor) {
 		newScale = oldScale * (1 + delta);
 	}
 
-	if (newScale < 1.0f) newScale = 1.0f;
-	
+	if (newScale < zoom::kMinZoom) newScale = zoom::kMinZoom;
+
 	CCPoint deltaFromAnchorPrev = playLayer->getPosition() - anchorPoint;
 
 	playLayer->setPosition(anchorPoint);
@@ -47,8 +51,8 @@ void clampPlayLayerPos(CCNode* playLayer) {
 	float xLimit = (contentSize.width * playLayer->getScale() - screenSize.width) * 0.5f;
 	float yLimit = (contentSize.height * playLayer->getScale() - screenSize.height) * 0.5f;
 
-	pos.x = clamp(pos.x, -xLimit, xLimit);
-	pos.y = clamp(pos.y, -yLimit, yLimit);
+	pos.x = std::clamp(pos.x, -xLimit, xLimit);
+	pos.y = std::clamp(pos.y, -yLimit, yLimit);
 
 	playLayer->setPosition(pos);
 }

@@ -7,11 +7,11 @@ using namespace geode::prelude;
 
 class WindowsZoomManager {
 public:
-	CCPoint lastMousePos;
-	CCPoint deltaMousePos;
+	CCPoint lastMousePos{};
+	CCPoint deltaMousePos{};
 
-	bool isPaused;
-	bool isPanning;
+	bool isPaused = false;
+	bool isPanning = false;
 
 	static WindowsZoomManager* get();
 
@@ -27,13 +27,13 @@ public:
 	void move(CCPoint delta);
 
 	float getZoom();
-	// CCPoint getMousePosOnScreen();
 	CCPoint getMousePosOnNode(CCNode* node);
-	
+
 	void onResume();
 	void onPause();
 	void onScroll(float y, float x);
 private:
+	CCNode* getPlayLayer();
 	void onScreenModified();
 };
 #endif // GEODE_IS_DESKTOP

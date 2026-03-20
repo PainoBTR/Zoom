@@ -3,6 +3,7 @@
 #include "utils.hpp"
 #include "mobile.hpp"
 #include "settings.hpp"
+#include "constants.hpp"
 
 #include <algorithm>
 #include <Geode/modify/PauseLayer.hpp>
@@ -12,8 +13,8 @@ AndroidZoomLayer* AndroidZoomLayer::instance = nullptr;
 
 AndroidZoomLayer* AndroidZoomLayer::create(CCNode* sceneLayer) {
 	if (instance) {
-		instance = nullptr;
-		geode::log::info("AndroidZoomLayer already exists, deleting it!");
+		geode::log::info("AndroidZoomLayer already exists, cleaning up!");
+		instance->onBackButton(nullptr);
 	}
 
 	auto layer = new AndroidZoomLayer();
@@ -45,7 +46,6 @@ bool AndroidZoomLayer::init(CCNode* sceneLayer) {
 	m_sceneLayer->addChild(this);
 
 	m_playLayer = m_sceneLayer->getChildByID("PlayLayer");
-
 	if (!m_playLayer) {
 		geode::log::error("PlayLayer is null!");
 		return false;
@@ -59,43 +59,62 @@ bool AndroidZoomLayer::init(CCNode* sceneLayer) {
 
 	m_pauseLayer->setVisible(false);
 
-	// Thanks SillyDoggo for the code snippet :D
-	// https://github.com/TheSillyDoggo/GeodeMenu/blob/17b19215b80a263379a560edfaf63c2a3f17e2f8/src/Client/AndroidUI.cpp#L28
-
-	auto backMenu = CCMenu::create();
-	backMenu->ignoreAnchorPointForPosition(false);
-	backMenu->setContentSize(ccp(0, 0));
-	backMenu->setPositionX(0);
-	backMenu->setPositionY(CCDirector::get()->getWinSize().height);
-	backMenu->setID("back-menu");
-	this->addChild(backMenu);
+	// Back button setup
+	m_backMenu = CCMenu::create();
+	m_backMenu->setID("back-menu"_spr);
+	m_backMenu->setContentSize({ 50.0f, 50.0f });
+	m_backMenu->setAnchorPoint({ 0.0f, 1.0f });
 
 	auto backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
-	backSpr->setOpacity(100);
+	backSpr->setOpacity(static_cast<GLubyte>(zoom::kBackButtonOpacity));
 
-	auto backBtn = CCMenuItemSpriteExtra::create(backSpr, this, menu_selector(AndroidZoomLayer::onBackButton));
-	backBtn->setPosition(ccp(24, -23));
-	backBtn->setSizeMult(1.15f);
+	auto backBtn = CCMenuItemSpriteExtra::create(
+		backSpr, this, menu_selector(AndroidZoomLayer::onBackButton));
+	backBtn->setID("back-button"_spr);
+	backBtn->setSizeMult(zoom::kBackButtonSizeMult);
 
-	backMenu->addChild(backBtn);
+	m_backMenu->addChild(backBtn);
+	this->addChildAtPosition(m_backMenu, Anchor::TopLeft, { 24.0f, -23.0f });
 
 	this->setID("AndroidZoomLayer"_spr);
-    this->setZOrder(11); // One above PauseLayer
+	this->setZOrder(zoom::kZoomLayerZOrder);
 
-	CCDirector::sharedDirector()->getTouchDispatcher()->addTargetedDelegate(this, -250, true);
+	CCDirector::sharedDirector()->getTouchDispatcher()->addTargetedDelegate(
+		this, zoom::kTouchPriority, true);
 	this->setTouchEnabled(true);
 
-	backMenu->setTouchPriority(CCDirector::sharedDirector()->getTouchDispatcher()->getTargetPrio());
-	CCDirector::sharedDirector()->getTouchDispatcher()->registerForcePrio(backMenu, 2);
+	m_backMenu->setTouchPriority(
+		CCDirector::sharedDirector()->getTouchDispatcher()->getTargetPrio());
+	CCDirector::sharedDirector()->getTouchDispatcher()->registerForcePrio(
+		m_backMenu, zoom::kForcePriority);
 
 	geode::log::info("AndroidZoomLayer initialized!");
 	return true;
 }
 
+void AndroidZoomLayer::cleanup() {
+	auto dispatcher = CCDirector::sharedDirector()->getTouchDispatcher();
+
+	if (m_backMenu) {
+		dispatcher->unregisterForcePrio(m_backMenu);
+	}
+
+	dispatcher->removeDelegate(this);
+	this->setTouchEnabled(false);
+
+	CCLayer::cleanup();
+}
+
 void AndroidZoomLayer::onBackButton(CCObject* sender) {
-	m_playLayer->setScale(1.0f);
-	m_playLayer->setPosition(ccp(0, 0));
-	m_pauseLayer->setVisible(true);
+	if (m_playLayer) {
+		m_playLayer->setScale(zoom::kDefaultZoom);
+		m_playLayer->setPosition(ccp(0, 0));
+	}
+
+	if (m_pauseLayer) {
+		m_pauseLayer->setVisible(true);
+	}
+
 	this->removeFromParentAndCleanup(true);
 	AndroidZoomLayer::instance = nullptr;
 }
@@ -141,7 +160,7 @@ void AndroidZoomLayer::ccTouchMoved(CCTouch* pTouch, CCEvent* pEvent) {
 
 		CCPoint delta = movingTouch->getDelta();
 		CCPoint touchDisplacement = ccpSub(movingTouch->getLocation(), anchoredTouch->getLocation());
-		float scaleDelta = touchDisplacement.normalize().dot(delta) / 100.0f;
+		float scaleDelta = touchDisplacement.normalize().dot(delta) / zoom::kTouchZoomDivisor;
 
 		zoomPlayLayer(m_playLayer, scaleDelta, m_ZoomAnchor);
 		clampPlayLayerPos(m_playLayer);
@@ -181,11 +200,15 @@ class $modify(AndroidZoomPauseLayer, PauseLayer) {
 
 		auto rightButtonMenu = getChildByID("right-button-menu");
 
-		auto zoomButtonSprite = CircleButtonSprite::createWithSprite("zoom_button.png"_spr, 1.0f, CircleBaseColor::Green, CircleBaseSize::MediumAlt);
+		auto zoomButtonSprite = CircleButtonSprite::createWithSprite(
+			"zoom_button.png"_spr, 1.0f,
+			CircleBaseColor::Green, CircleBaseSize::MediumAlt);
 		zoomButtonSprite->getTopNode()->setScale(1.0f);
-		zoomButtonSprite->setScale(0.6f);
+		zoomButtonSprite->setScale(zoom::kPauseZoomButtonScale);
 
-		auto zoomButton = CCMenuItemSpriteExtra::create(zoomButtonSprite, this, menu_selector(AndroidZoomPauseLayer::onZoomButton));
+		auto zoomButton = CCMenuItemSpriteExtra::create(
+			zoomButtonSprite, this,
+			menu_selector(AndroidZoomPauseLayer::onZoomButton));
 		zoomButton->setID("zoom-button"_spr);
 
 		rightButtonMenu->addChild(zoomButton);

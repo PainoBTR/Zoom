@@ -3,6 +3,7 @@
 #include "utils.hpp"
 #include "desktop.hpp"
 #include "settings.hpp"
+#include "constants.hpp"
 
 #include <geode.custom-keybinds/include/Keybinds.hpp>
 
@@ -27,6 +28,10 @@ WindowsZoomManager* WindowsZoomManager::get() {
 	return inst;
 }
 
+CCNode* WindowsZoomManager::getPlayLayer() {
+	return CCScene::get()->getChildByID("PlayLayer");
+}
+
 void WindowsZoomManager::togglePauseMenu() {
 	if (!isPaused) return;
 
@@ -44,7 +49,7 @@ void WindowsZoomManager::setPauseMenuVisible(bool visible) {
 }
 
 void WindowsZoomManager::setZoom(float zoom) {
-	CCNode* playLayer = CCScene::get()->getChildByID("PlayLayer");
+	auto* playLayer = getPlayLayer();
 	if (!playLayer) return;
 
 	playLayer->setScale(zoom);
@@ -52,18 +57,16 @@ void WindowsZoomManager::setZoom(float zoom) {
 }
 
 void WindowsZoomManager::zoom(float delta) {
-	CCNode* playLayer = CCScene::get()->getChildByID("PlayLayer");
+	auto* playLayer = getPlayLayer();
 	if (!playLayer) return;
 
-	// CCPoint mouseScreenPos = getMousePosOnScreen();
 	CCPoint mousePos = getMousePos();
-
 	zoomPlayLayer(playLayer, delta, mousePos);
 	onScreenModified();
 }
 
 void WindowsZoomManager::move(CCPoint delta) {
-	CCNode* playLayer = CCScene::get()->getChildByID("PlayLayer");
+	auto* playLayer = getPlayLayer();
 	if (!playLayer) return;
 
 	CCPoint pos = playLayer->getPosition();
@@ -73,7 +76,7 @@ void WindowsZoomManager::move(CCPoint delta) {
 }
 
 void WindowsZoomManager::setPos(float x, float y) {
-	CCNode* playLayer = CCScene::get()->getChildByID("PlayLayer");
+	auto* playLayer = getPlayLayer();
 	if (!playLayer) return;
 
 	playLayer->setPosition(CCPoint{ x, y });
@@ -82,8 +85,8 @@ void WindowsZoomManager::setPos(float x, float y) {
 }
 
 float WindowsZoomManager::getZoom() {
-	CCNode* playLayer = CCScene::get()->getChildByID("PlayLayer");
-	if (!playLayer) return 1.0f;
+	auto* playLayer = getPlayLayer();
+	if (!playLayer) return zoom::kDefaultZoom;
 
 	return playLayer->getScale();
 }
@@ -92,12 +95,11 @@ CCPoint WindowsZoomManager::screenToWorld(CCPoint pos) {
 	CCSize screenSize = getScreenSize();
 	CCSize winSize = CCEGLView::get()->getFrameSize();
 
-	return CCPoint{ pos.x * (screenSize.width / winSize.width), pos.y * (screenSize.height / winSize.height) };
+	return CCPoint{
+		pos.x * (screenSize.width / winSize.width),
+		pos.y * (screenSize.height / winSize.height)
+	};
 }
-
-// CCPoint WindowsZoomManager::getMousePosOnScreen() {
-// 	return screenToWorld(getMousePos());
-// }
 
 CCPoint WindowsZoomManager::getMousePosOnNode(CCNode* node) {
 	return node->convertToNodeSpace(getMousePos());
@@ -105,36 +107,34 @@ CCPoint WindowsZoomManager::getMousePosOnNode(CCNode* node) {
 
 void WindowsZoomManager::update(float dt) {
 	auto mousePos = getMousePos();
-	auto lastMousePos = WindowsZoomManager::get()->lastMousePos;
 
-	WindowsZoomManager::get()->deltaMousePos = CCPoint{ mousePos.x - lastMousePos.x, mousePos.y - lastMousePos.y };
-	WindowsZoomManager::get()->lastMousePos = mousePos;
+	deltaMousePos = CCPoint{ mousePos.x - lastMousePos.x, mousePos.y - lastMousePos.y };
+	lastMousePos = mousePos;
 
 	if (!isPaused) return;
 
 	if (isPanning) {
-		CCPoint delta = WindowsZoomManager::get()->deltaMousePos;
-		move(delta);
+		move(deltaMousePos);
 	}
 }
 
 void WindowsZoomManager::onResume() {
-	setZoom(1.0f);
+	setZoom(zoom::kDefaultZoom);
 	setPos(0.0f, 0.0f);
 
 	isPaused = false;
-	WindowsZoomManager::get()->isPanning = false;
+	isPanning = false;
 }
 
 void WindowsZoomManager::onPause() {
 	isPaused = true;
-	WindowsZoomManager::get()->isPanning = false;
+	isPanning = false;
 }
 
 void WindowsZoomManager::onScroll(float y, float x) {
 	if (!isPaused) return;
 
-	CCNode* playLayer = CCScene::get()->getChildByID("PlayLayer");
+	auto* playLayer = getPlayLayer();
 	if (!playLayer) return;
 
 	if (SettingsManager::get()->altDisablesZoom) {
@@ -143,19 +143,20 @@ void WindowsZoomManager::onScroll(float y, float x) {
 			return;
 		}
 	}
-	
-	float zoomDelta = SettingsManager::get()->zoomSensitivity * 0.1f;
-	
+
+	float baseDelta = SettingsManager::get()->zoomSensitivity * zoom::kSensitivityScale;
+
 	if (Loader::get()->isModLoaded("prevter.smooth-scroll")) {
-		zoom(-y * zoomDelta * 0.1f);
+		zoom(-y * baseDelta * zoom::kSmoothScrollDamping);
 	} else if (y > 0) {
-		zoom(-zoomDelta);
+		zoom(-baseDelta);
 	} else {
-		zoom(zoomDelta);
+		zoom(baseDelta);
 	}
 
 	if (y > 0) {
-		if (SettingsManager::get()->autoShowMenu && playLayer->getScale() <= 1.01f) {
+		if (SettingsManager::get()->autoShowMenu &&
+			playLayer->getScale() <= zoom::kAutoShowZoomThreshold) {
 			setPauseMenuVisible(true);
 		}
 	} else {
@@ -164,11 +165,10 @@ void WindowsZoomManager::onScroll(float y, float x) {
 }
 
 void WindowsZoomManager::onScreenModified() {
-	CCNode* playLayer = CCScene::get()->getChildByID("PlayLayer");
+	auto* playLayer = getPlayLayer();
 	if (!playLayer) return;
 
 	clampPlayLayerPos(playLayer);
-	if (!isPaused) return;
 }
 
 class $modify(PauseLayer) {
@@ -225,6 +225,11 @@ class $modify(PlayLayer) {
 		WindowsZoomManager::get()->onResume();
 		return PlayLayer::init(level, useReplay, dontCreateObjects);
 	}
+
+	void levelComplete() {
+		WindowsZoomManager::get()->onResume();
+		PlayLayer::levelComplete();
+	}
 };
 
 class $modify(CCScheduler) {
@@ -250,6 +255,8 @@ class $modify(CCEGLView) {
 	}
 };
 #else
+// macOS requires reinterpret_cast for objc_msgSend trampolines —
+// this is the standard pattern for calling ObjC methods from C++.
 void otherMouseDownHook(void* self, SEL sel, void* event) {
 	WindowsZoomManager::get()->isPanning = true;
 	reinterpret_cast<void(*)(void*, SEL, void*)>(objc_msgSend)(self, sel, event);
@@ -264,7 +271,7 @@ $execute {
 	if (auto hook = ObjcHook::create("EAGLView", "otherMouseDown:", &otherMouseDownHook)) {
 		(void) Mod::get()->claimHook(hook.unwrap());
 	}
-	
+
 	if (auto hook = ObjcHook::create("EAGLView", "otherMouseUp:", &otherMouseUpHook)) {
 		(void) Mod::get()->claimHook(hook.unwrap());
 	}

@@ -17,17 +17,18 @@ public:
 	void ccTouchEnded(CCTouch* pTouch, CCEvent* pEvent) override;
 	void ccTouchCancelled(CCTouch* pTouch, CCEvent* pEvent) override;
 	void onBackButton(CCObject* sender);
-	void onBackButton23(CCObject* sender);
 	void removeTouchEvent(CCTouch* pTouch, CCEvent* pEvent);
+	void cleanup();
 private:
 	CCPoint getAnchorPoint(CCTouch* touch1, CCTouch* touch2);
 
 	bool m_isZooming = false;
 	CCPoint m_ZoomAnchor = ccp(0, 0);
 
-	CCNode* m_sceneLayer;
-	CCNode* m_playLayer;
-	CCNode* m_pauseLayer;
+	CCNode* m_sceneLayer = nullptr;
+	CCNode* m_playLayer = nullptr;
+	CCNode* m_pauseLayer = nullptr;
+	CCMenu* m_backMenu = nullptr;
 	std::vector<CCTouch*> m_touches = {};
 };
 
